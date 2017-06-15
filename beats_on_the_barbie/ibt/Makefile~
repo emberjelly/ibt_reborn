@@ -1,0 +1,5 @@
+all:
+	g++ -O2 -std=c++11 -Wall -o ../bin/ibt ibt.cpp ibt_frontend.cpp -lsndfile -lmarsyas -pthread -lwiringPi
+
+clean:
+	rm *.o
