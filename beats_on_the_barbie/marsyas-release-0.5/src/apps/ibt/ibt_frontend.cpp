@@ -144,7 +144,7 @@ int main(int argc, const char **argv)
 			
 			if (frame_beat == 1)
 			{
-				block_energy("test_output.wav");
+				//block_energy("test_output.wav");
 				frame_beat = 0;
 			}
 
