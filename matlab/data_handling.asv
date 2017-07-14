@@ -1,0 +1,26 @@
+
+
+directory = '../beats_on_the_barbie/beat_database/open/'
+files = dir('../beats_on_the_barbie/beat_database/open/*.csv')
+
+file_names = {files.name}
+open_training_set = {};
+
+for i = 1:length(file_names)
+    current_data = csvread(strcat(directory, file_names{i}));
+    open_training_set{i} = current_data;
+end
+
+
+for i = 1:length(file_names)
+    current_data = open_training_set{i};
+    beats_times = current_data(:, 1)
+    beat_data = current_data(:, 2:end);
+    
+    energies = [];
+    for i = 1:length(beats)
+    end
+    
+end
+
+
