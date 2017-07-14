@@ -45,6 +45,7 @@ import ntpath
 import os
 import sched
 import time
+import compute_downbeats
 
 # This is only needed for Python v2 but is harmless for Python v3.
 import sip
@@ -67,7 +68,7 @@ except ImportError:
 
 
 
-
+'''
 class YourThreadName(QThread):
 
     def __init__(self, fname):
@@ -109,7 +110,7 @@ class YourThreadName(QThread):
             self.beat_num += 1
 
             error = self.elapsed/1000.0 - float(self.times[self.beat_num])
-            print error
+            #print error
 
             if self.isrunning:
                 scheduler.enter(float(self.times[self.beat_num]) - float(self.times[self.beat_num - 1]) - error, 1, print_event, (self.beat_num,))
@@ -121,8 +122,87 @@ class YourThreadName(QThread):
         scheduler.enter(float(self.times[0]), 1, print_event, (1,))
 
         scheduler.run()
+'''
+import subprocess
+
+def get_beats(fname):
+
+    file_path = fname
+    print "Loading ", fname
+    tmp = os.path.split(fname)[1]
+    base_path = os.path.split(fname)[0] + "/beats"        
+    base = os.path.splitext(tmp)[0]
+    fname = base_path + "/" + base + ".txt"
+
+    if not os.path.isfile(fname):
+        bashCommand = ["essentia_bin/streaming_beattracker_multifeature_mirex2013", file_path,  fname]
+        subprocess.call(bashCommand)
 
 
+
+    f = open(fname, 'r')
+    data = f.read()
+
+    beats = data.split('\n')
+    beats.pop(-1)
+    beats = map(float, beats)
+    beats.append(99999)
+    return beats
+
+def get_downbeats(fname):
+
+    print "Loading", fname
+
+    ttmp = fname;
+    tmp = os.path.split(fname)[1]
+    base_path = os.path.split(fname)[0] + "/annotated_downbeats"  
+    base = os.path.splitext(tmp)[0]
+    fname = base_path + "/" + base + ".txt"
+
+
+
+    if os.path.isfile(fname):
+
+        print "Loading saved down beats"
+        f = open(fname, 'r')
+        data = f.read()
+
+        beats = data.split('\n')
+        beats.pop(-1)
+        beats = map(int, beats)
+        return beats
+    else:
+
+        print "Loading estimted down beats"
+
+        fname = ttmp
+        tmp = os.path.split(fname)[1]
+        base_path = os.path.split(fname)[0] + "/downbeats"        
+        base = os.path.splitext(tmp)[0]
+        fname = base_path + "/" + base + ".txt"
+
+        if not os.path.isfile(fname):
+            return [1, 2, 3, 4]*1000
+        else:
+
+            (beat_times, beat_nums) = compute_downbeats.load_down_beat_times(fname)
+
+            fname = ttmp
+            tmp = os.path.split(fname)[1]
+            base_path = os.path.split(fname)[0] + "/beats"        
+            base = os.path.splitext(tmp)[0]
+            fname = base_path + "/" + base + ".txt"
+            f = open(fname, 'r')
+            data = f.read()
+
+            beats = data.split('\n')
+            beats.pop(-1)
+            beats = map(float, beats)
+            beat_times = map(float, beat_times)
+            beat_nums = map(int, beat_nums)
+
+            return compute_downbeats.compute_downbeats(beats, beat_times, beat_nums)
+        
 
 
 class MainWindow(QtGui.QMainWindow):
@@ -150,12 +230,74 @@ class MainWindow(QtGui.QMainWindow):
 
         self.sources = []
 
-        self.myThread = YourThreadName("./tmp.txt")
+        #self.myThread = YourThreadName("./tmp.txt")
 
         self.tick_count = 0
+        self.beat_num = 0;
+        self.beats = [0, 1]
+        self.downbeats = [1, 2]
+
+        self.current_fname = ""
 
 
+        #MainWindow.keyPressEvent = self.newOnkeyPressEvent
 
+        self.p_text = QtGui.QPlainTextEdit()
+        self.p_text.keyPressEvent = self.keyPressEvent
+        '''
+        default_folder = '/home/jerry/Music'
+
+        index = 1
+        for string in os.listdir(default_folder):
+            if string.endswith(".mp3"):
+            #print(os.path.join("/mydir", file))
+                self.sources.append(Phonon.MediaSource(string))
+                filename = ntpath.basename(string)
+                titleItem = QtGui.QTableWidgetItem(filename)
+                titleItem.setFlags(titleItem.flags() ^ QtCore.Qt.ItemIsEditable)
+
+                currentRow = self.musicTable.rowCount()
+                self.musicTable.insertRow(currentRow)
+                self.musicTable.setItem(currentRow, 0, titleItem)
+        
+        if self.sources:
+            self.metaInformationResolver.setCurrentSource(self.sources[index])
+        '''
+    def keyPressEvent(self,e):
+        
+        print e.key()
+        if e.key() == 16777223:
+            print "Saving new down beats"
+            fname = self.current_fname
+            tmp = os.path.split(fname)[1]
+            base_path = os.path.split(fname)[0] + "/annotated_downbeats"        
+            base = os.path.splitext(tmp)[0]
+            fname = base_path + "/" + base + ".txt"
+
+            first_beat = self.beat_num%4
+            first_beat = (first_beat + 1) % 4
+
+
+            mapping = [1, 4, 3, 2]
+            first_beat = mapping[first_beat]
+
+
+            output_nums = ""
+
+
+            for i in range(len(self.beats)):
+                output_nums = output_nums + str(first_beat) + "\n" 
+                first_beat = (first_beat%4) + 1
+
+
+            print fname
+            f = open(fname, 'w')
+            f.write(output_nums)
+            f.close()
+            self.downbeats = get_downbeats(self.current_fname)
+
+
+    
     def sizeHint(self):
         return QtCore.QSize(800, 600)
 
@@ -190,7 +332,7 @@ class MainWindow(QtGui.QMainWindow):
 
     def stateChanged(self, newState, oldState):
 
-        print self.metaInformationResolver.currentSource().fileName()
+        #print self.metaInformationResolver.currentSource().fileName()
         
         if newState == Phonon.ErrorState:
             if self.mediaObject.errorType() == Phonon.FatalError:
@@ -205,50 +347,78 @@ class MainWindow(QtGui.QMainWindow):
             self.pauseAction.setEnabled(True)
             self.stopAction.setEnabled(True)
             print("Start IBT")
-            self.myThread = YourThreadName(self.metaInformationResolver.currentSource().fileName())
-            self.myThread.isrunning = True
-            self.myThread.start()
+            #self.myThread = YourThreadName(self.metaInformationResolver.currentSource().fileName())
+        
+            
+            self.beats = get_beats(self.current_fname)
+            self.downbeats = get_downbeats(self.current_fname)
+            #(self.beats, self.downbeats) = compute_downbeats.load_down_beat_times(self.metaInformationResolver.currentSource().fileName())
+            #print self.beats
+            #print self.beats
+            #self.myThread.isrunning = True
+            #self.myThread.start()
+
+
 
         elif newState == Phonon.StoppedState:
             self.stopAction.setEnabled(False)
             self.playAction.setEnabled(True)
             self.pauseAction.setEnabled(False)
             self.timeLcd.display("00:00")
-            self.myThread.isrunning = False
+            #self.myThread.isrunning = False
             print("Stop IBT")
+            self.beat_num = 0
 
         elif newState == Phonon.PausedState:
             self.pauseAction.setEnabled(False)
             self.stopAction.setEnabled(True)
             self.playAction.setEnabled(True)
-            self.myThread.isrunning = False
+            #self.myThread.isrunning = False
             print("Pause IBT")
 
     def tick(self, time):
-
+        
+           
         self.tick_count += 1
 
         if self.tick_count == 100:
             displayTime = QtCore.QTime(0, (time / 60000) % 60, (time / 1000) % 60)
             self.timeLcd.display(displayTime.toString('mm:ss'))
             self.tick_count = 0
-        self.myThread.elapsed = time
+
+        #print time/1000.0 - 0.05
+        #print  self.beats[self.beat_num]
+
+        while (self.beats[self.beat_num] - time/1000.0 > 1):
+            self.beat_num -= 1
+
+
+        if time/1000.0 + 0.005 > self.beats[self.beat_num]:
+            while (time/1000.0 + 0.005 > self.beats[self.beat_num]):
+                self.beat_num += 1
+            print "Current Beat", self.downbeats[self.beat_num], "Beat Time: ", self.beats[self.beat_num - 1], "Beat Num: ", str(self.beat_num).zfill(2), "Error: ", time/1000.0 - self.beats[self.beat_num - 1]
+            
+
+
+        #self.myThread.elapsed = time
 
     def tableClicked(self, row, column):
         wasPlaying = (self.mediaObject.state() == Phonon.PlayingState)
 
-        self.mediaObject.stop()
-        self.mediaObject.clearQueue()
+        #self.mediaObject.stop()
+        #self.mediaObject.clearQueue()
 
+        self.current_fname = self.sources[row].fileName()
         self.mediaObject.setCurrentSource(self.sources[row])
 
-        if wasPlaying:
-            self.mediaObject.play()
-        else:
-            self.mediaObject.stop()
+        #if wasPlaying:
+        #    self.mediaObject.play()
+        #else:
+        #    self.mediaObject.stop()
 
     def sourceChanged(self, source):
         self.musicTable.selectRow(self.sources.index(source))
+
         self.timeLcd.display('00:00')
 
         
