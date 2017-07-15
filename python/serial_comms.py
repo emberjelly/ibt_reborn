@@ -1,8 +1,8 @@
 import serial
 import time
 
-baudrate = 115200
-device = "/dev/ttyACM0"
+baudrate = 9600
+device = "/dev/ttyUSB0"
 
 ser = serial.Serial(device, baudrate)
 
@@ -21,3 +21,6 @@ for i in range(20):
 	time.sleep(0.5)
 	write_msg(ser, '1')
 	print "test"
+
+
+ser.close()
