@@ -47,6 +47,8 @@ import sched
 import time
 import compute_downbeats
 import thread
+import serial_comms
+import subprocess
 
 # This is only needed for Python v2 but is harmless for Python v3.
 import sip
@@ -69,65 +71,9 @@ except ImportError:
 
 
 
-'''
-class YourThreadName(QThread):
-
-    def __init__(self, fname):
-        QThread.__init__(self)
-
-        tmp = os.path.split(fname)[1]
-        
-        base_path = os.path.split(fname)[0] + "/beats"        
-
-        base = os.path.splitext(tmp)[0]
-
-
-        self.fname = base_path + "/" + base + ".txt"
-
-        print self.fname
-        self.isrunning = True
-        self.times = None
-        self.beat_num = 0
-        self.elapsed = 0
-
-        f = open(self.fname, 'r')
-        data = f.read()
-        
-        self.times = data.split('\n')
-        self.times.pop(-1)
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        # your logic here
-
-        #os.rename(self.fname, base + ".txt")
-        f = open(self.fname, 'r')
-        scheduler = sched.scheduler(time.time, time.sleep)
-
-        def print_event(name):
-            #print "Beat at " + self.times[self.beat_num] + " " + str(self.elapsed)
-            self.beat_num += 1
-
-            error = self.elapsed/1000.0 - float(self.times[self.beat_num])
-            #print error
-
-            if self.isrunning:
-                scheduler.enter(float(self.times[self.beat_num]) - float(self.times[self.beat_num - 1]) - error, 1, print_event, (self.beat_num,))
-            else:
-                self.beat_num = 0
-
-        #for i, time_ in enumerate(times):
-
-        scheduler.enter(float(self.times[0]), 1, print_event, (1,))
-
-        scheduler.run()
-'''
-import subprocess
-
 def get_beats(fname):
 
+    # Get the text file path
     file_path = fname
     print "Loading ", fname
     tmp = os.path.split(fname)[1]
@@ -135,19 +81,19 @@ def get_beats(fname):
     base = os.path.splitext(tmp)[0]
     fname = base_path + "/" + base + ".txt"
 
+    # Check if there is a cached version of the beat times
     if not os.path.isfile(fname):
+        # If not create it now
         bashCommand = ["essentia_bin/streaming_beattracker_multifeature_mirex2013", file_path,  fname]
         subprocess.call(bashCommand)
-
-
 
     f = open(fname, 'r')
     data = f.read()
 
     beats = data.split('\n')
-    beats.pop(-1)
+    beats.pop(-1)               # The last line is empty
     beats = map(float, beats)
-    beats.append(99999)
+    
     return beats
 
 def get_downbeats(fname):
@@ -172,6 +118,7 @@ def get_downbeats(fname):
         beats.pop(-1)
         beats = map(int, beats)
         return beats
+
     else:
 
         print "Loading estimted down beats"
@@ -203,7 +150,25 @@ def get_downbeats(fname):
             beat_nums = map(int, beat_nums)
 
             return compute_downbeats.compute_downbeats(beats, beat_times, beat_nums)
-        
+
+def interpolate_beats(beats, downbeats, resolution):
+    interp_beats = []
+    interp_downbeats = []
+
+    for i in range(len(beats) - 1):
+        for j in range(resolution):
+            interp_beats.append(beats[i] + j*(beats[i + 1] - beats[i])/resolution)
+            interp_downbeats.append(downbeats[i + 1])
+
+    interp_downbeats.append(downbeats[-1])
+    interp_beats.append(beats[-1])
+    
+    interp_downbeats.append(9999999)
+    interp_beats.append(999999)
+
+
+    return (interp_beats, interp_downbeats)
+
 
 
 class MainWindow(QtGui.QMainWindow):
@@ -248,6 +213,8 @@ class MainWindow(QtGui.QMainWindow):
         self.p_text.keyPressEvent = self.keyPressEvent
 
         thread.start_new_thread(self.check_beats, ())
+
+        self.DRUM_LAG = 0.15
         '''
         default_folder = '/home/jerry/Music'
 
@@ -301,18 +268,36 @@ class MainWindow(QtGui.QMainWindow):
             self.downbeats = get_downbeats(self.current_fname)
 
 
+        elif e.key() == 16777235:
+            self.DRUM_LAG += 0.005
+            print self.DRUM_LAG
+        elif e.key() == 16777237:
+            self.DRUM_LAG -= 0.005
+            print self.DRUM_LAG
+
+
+
     def check_beats(self):
-        while not self.finished:
+        while (not self.finished):
+
             time = self.mediaObject.currentTime()
 
-            while (self.beats[self.beat_num] - time/1000.0 > 1):
+            while (self.beats[self.beat_num] - time/1000.0 > 1.5):
                 self.beat_num -= 1
 
 
-            if time/1000.0 > self.beats[self.beat_num]:
-                while (time/1000.0 > self.beats[self.beat_num]):
+
+            if time/1000.0 - self.DRUM_LAG > self.beats[self.beat_num] and self.beat_num + 1 < len(self.beats):
+                while (time/1000.0 - self.DRUM_LAG > self.beats[self.beat_num]):
                     self.beat_num += 1
-                print "Current Beat", self.downbeats[self.beat_num], "Beat Time: ", self.beats[self.beat_num - 1], "Beat Num: ", str(self.beat_num).zfill(2), "Error: ", time/1000.0 - self.beats[self.beat_num - 1]
+
+
+                if self.beat_num%4 == 1:
+                    print "Current Beat", self.downbeats[self.beat_num], "Beat Time: ", self.beats[self.beat_num - 1], "Beat Num: ", str(self.beat_num).zfill(2), "Error: ", time/1000.0 - self.beats[self.beat_num - 1]
+                    serial_comms.write_msg(serial_comms.ser, str(self.downbeats[self.beat_num]))
+                else:
+                    serial_comms.write_msg(serial_comms.ser, 's')
+
            
 
     
@@ -342,6 +327,9 @@ class MainWindow(QtGui.QMainWindow):
         if self.sources:
             self.metaInformationResolver.setCurrentSource(self.sources[index])
 
+        self.mediaObject.setCurrentSource(self.sources[index])
+
+
     def about(self):
         QtGui.QMessageBox.information(self, "About Music Player",
                 "The Music Player example shows how to use Phonon - the "
@@ -370,6 +358,8 @@ class MainWindow(QtGui.QMainWindow):
             
             self.beats = get_beats(self.current_fname)
             self.downbeats = get_downbeats(self.current_fname)
+            (self.beats, self.downbeats) = interpolate_beats(self.beats, self.downbeats, 4)
+
             #(self.beats, self.downbeats) = compute_downbeats.load_down_beat_times(self.metaInformationResolver.currentSource().fileName())
             #print self.beats
             #print self.beats
@@ -418,6 +408,7 @@ class MainWindow(QtGui.QMainWindow):
         #    self.mediaObject.stop()
 
     def sourceChanged(self, source):
+        self.beat_num = 0
         self.musicTable.selectRow(self.sources.index(source))
 
         self.timeLcd.display('00:00')
@@ -590,6 +581,7 @@ class MainWindow(QtGui.QMainWindow):
 
     def closeEvent(self, event):
         self.finished = True
+        serial_comms.ser.close()
 
 
 if __name__ == '__main__':
